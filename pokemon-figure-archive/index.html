@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16181d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="피규어 도감">
+  <title>포켓몬 피규어 아카이브</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">MY COLLECTION</p>
+      <h1>포켓몬 피규어 도감</h1>
+    </div>
+    <button id="menuButton" class="icon-button" aria-label="설정 열기">•••</button>
+  </header>
+
+  <main>
+    <section class="summary" aria-label="수집 현황">
+      <div><strong id="ownedSpeciesCount">0</strong><span>보유 종</span></div>
+      <div><strong id="figureCount">0</strong><span>총 피규어</span></div>
+      <div><strong id="completionRate">0%</strong><span>도감률</span></div>
+    </section>
+
+    <section class="toolbar sticky-toolbar">
+      <label class="search-box">
+        <span aria-hidden="true">⌕</span>
+        <input id="searchInput" type="search" placeholder="이름 또는 도감 번호 검색" autocomplete="off">
+      </label>
+      <div class="filter-row">
+        <select id="ownershipFilter" aria-label="보유 상태 필터">
+          <option value="all">전체</option>
+          <option value="owned">보유</option>
+          <option value="unowned">미보유</option>
+        </select>
+        <select id="generationFilter" aria-label="세대 필터">
+          <option value="all">모든 세대</option>
+          <option value="1">1세대</option>
+          <option value="2">2세대</option>
+          <option value="3">3세대</option>
+          <option value="4">4세대</option>
+          <option value="5">5세대</option>
+          <option value="6">6세대</option>
+          <option value="7">7세대</option>
+          <option value="8">8세대</option>
+          <option value="9">9세대</option>
+        </select>
+        <select id="sortFilter" aria-label="정렬">
+          <option value="number">도감 번호순</option>
+          <option value="recent">최근 등록순</option>
+          <option value="count">보유 개수순</option>
+          <option value="name">이름순</option>
+        </select>
+      </div>
+    </section>
+
+    <section id="loadingPanel" class="loading-panel">
+      <div class="spinner"></div>
+      <strong id="loadingTitle">포켓몬 도감을 준비하는 중</strong>
+      <p id="loadingMessage">처음 한 번만 데이터를 내려받습니다.</p>
+    </section>
+
+    <section id="pokemonGrid" class="pokemon-grid" aria-live="polite"></section>
+    <p id="emptyMessage" class="empty-message" hidden>조건에 맞는 포켓몬이 없습니다.</p>
+  </main>
+
+  <dialog id="detailDialog" class="sheet-dialog">
+    <div class="sheet-handle"></div>
+    <header class="dialog-header">
+      <div>
+        <p id="detailNumber" class="eyebrow"></p>
+        <h2 id="detailName"></h2>
+        <p id="detailSubtext" class="muted"></p>
+      </div>
+      <button class="icon-button" data-close-dialog="detailDialog" aria-label="닫기">×</button>
+    </header>
+    <div class="dialog-actions">
+      <button id="addFigureButton" class="primary-button">＋ 피규어 기록하기</button>
+    </div>
+    <section id="figureList" class="figure-list"></section>
+  </dialog>
+
+  <dialog id="recordDialog" class="full-dialog">
+    <header class="dialog-header fixed-dialog-header">
+      <button class="text-button" data-close-dialog="recordDialog">취소</button>
+      <div class="dialog-title-center">
+        <strong id="recordPokemonName">피규어 기록</strong>
+        <small id="recordModeText">새 기록</small>
+      </div>
+      <button id="saveFigureButton" class="text-button accent">저장</button>
+    </header>
+
+    <form id="figureForm" class="record-form">
+      <input id="editingFigureId" type="hidden">
+      <section class="camera-section">
+        <div id="cameraStage" class="camera-stage">
+          <video id="cameraVideo" playsinline muted></video>
+          <img id="photoPreview" alt="촬영 미리보기" hidden>
+          <div id="cameraPlaceholder" class="camera-placeholder">
+            <span>📷</span>
+            <strong>피규어 사진</strong>
+            <small>사진 앱에 저장하지 않고 도감 안에만 보관합니다.</small>
+          </div>
+        </div>
+        <div class="camera-actions">
+          <button id="startCameraButton" type="button" class="secondary-button">카메라 켜기</button>
+          <button id="captureButton" type="button" class="primary-button" hidden>촬영</button>
+          <button id="retakeButton" type="button" class="secondary-button" hidden>다시 찍기</button>
+          <label class="secondary-button file-button">
+            기본 카메라
+            <input id="fallbackPhotoInput" type="file" accept="image/*" capture="environment">
+          </label>
+        </div>
+        <p id="photoSizeText" class="tiny muted"></p>
+      </section>
+
+      <section class="form-section">
+        <h3>기본 정보</h3>
+        <label>피규어 이름
+          <input id="figureNameInput" name="figureName" placeholder="예: 몬콜레 피카츄">
+        </label>
+        <label>모습·폼
+          <input id="formInput" name="form" list="formSuggestions" placeholder="기본 모습">
+          <datalist id="formSuggestions">
+            <option value="기본 모습"></option>
+            <option value="알로라의 모습"></option>
+            <option value="가라르의 모습"></option>
+            <option value="히스이의 모습"></option>
+            <option value="팔데아의 모습"></option>
+            <option value="메가진화"></option>
+            <option value="거다이맥스"></option>
+            <option value="이로치"></option>
+            <option value="특별 의상"></option>
+          </datalist>
+        </label>
+        <div class="two-column">
+          <label>제조사
+            <input id="makerInput" name="maker" placeholder="타카라토미">
+          </label>
+          <label>시리즈
+            <input id="seriesInput" name="series" placeholder="몬콜레 MS">
+          </label>
+        </div>
+        <label>상품 번호
+          <input id="productCodeInput" name="productCode" placeholder="MS-01">
+        </label>
+      </section>
+
+      <section class="form-section">
+        <h3>구입 정보</h3>
+        <label>구입처·출처
+          <input id="sourceInput" name="source" placeholder="예: 일본 중고숍, 선물">
+        </label>
+        <div class="price-row">
+          <label>가격
+            <input id="priceInput" name="price" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
+          </label>
+          <label>통화
+            <select id="currencyInput" name="currency">
+              <option value="KRW">원</option>
+              <option value="JPY">엔</option>
+              <option value="USD">달러</option>
+              <option value="EUR">유로</option>
+            </select>
+          </label>
+        </div>
+        <label>구입일
+          <input id="purchaseDateInput" name="purchaseDate" type="date">
+        </label>
+        <div class="two-column">
+          <label>상태
+            <select id="conditionInput" name="condition">
+              <option value="">미설정</option>
+              <option value="미개봉">미개봉</option>
+              <option value="개봉">개봉</option>
+              <option value="중고">중고</option>
+              <option value="손상">손상 있음</option>
+            </select>
+          </label>
+          <label>보관 위치
+            <input id="locationInput" name="location" placeholder="진열장 2층">
+          </label>
+        </div>
+      </section>
+
+      <section class="form-section">
+        <h3>메모</h3>
+        <textarea id="notesInput" name="notes" rows="5" placeholder="도색 상태, 구성품, 구입 당시 기억 등을 적어두세요."></textarea>
+        <label class="checkbox-row">
+          <input id="setAsCoverInput" type="checkbox" checked>
+          <span>이 사진을 도감 대표 썸네일로 사용</span>
+        </label>
+      </section>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="sheet-dialog small-sheet">
+    <div class="sheet-handle"></div>
+    <header class="dialog-header">
+      <h2>데이터 관리</h2>
+      <button class="icon-button" data-close-dialog="settingsDialog" aria-label="닫기">×</button>
+    </header>
+    <div class="settings-list">
+      <button id="exportButton" class="settings-item"><span>백업 내보내기</span><small>사진을 포함한 JSON 파일</small></button>
+      <label class="settings-item">
+        <span>백업 불러오기</span><small>기존 기록과 합치기</small>
+        <input id="importInput" type="file" accept="application/json,.json">
+      </label>
+      <button id="refreshCatalogButton" class="settings-item"><span>포켓몬 목록 새로 받기</span><small>수집 기록은 유지됩니다</small></button>
+      <button id="requestStorageButton" class="settings-item"><span>저장공간 보호 요청</span><small id="storageStatus">브라우저 상태 확인</small></button>
+      <div class="settings-item static"><span>현재 사용량</span><small id="storageUsage">계산 중</small></div>
+    </div>
+    <p class="settings-note">사진은 이 브라우저의 IndexedDB에 저장됩니다. 사이트 데이터 삭제나 기기 변경에 대비해 정기적으로 백업하세요.</p>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <canvas id="captureCanvas" hidden></canvas>
+
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
