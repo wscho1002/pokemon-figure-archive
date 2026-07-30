@@ -2,7 +2,7 @@
 
 const FigureDB = (() => {
   const DB_NAME = "pokemon-figure-archive";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let dbPromise;
 
   function open() {
@@ -21,6 +21,11 @@ const FigureDB = (() => {
         }
         if (!db.objectStoreNames.contains("speciesPrefs")) {
           db.createObjectStore("speciesPrefs", { keyPath: "speciesId" });
+        }
+        if (!db.objectStoreNames.contains("seriesGoals")) {
+          const store = db.createObjectStore("seriesGoals", { keyPath: "id" });
+          store.createIndex("maker", "maker", { unique: false });
+          store.createIndex("series", "series", { unique: false });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -48,7 +53,7 @@ const FigureDB = (() => {
     });
   }
 
-  const getMeta = async (key) => {
+  const getMeta = async key => {
     const row = await run("meta", "readonly", store => store.get(key));
     return row?.value;
   };
@@ -61,13 +66,18 @@ const FigureDB = (() => {
   const putSpeciesPref = pref => run("speciesPrefs", "readwrite", store => store.put(pref));
   const getSpeciesPref = speciesId => run("speciesPrefs", "readonly", store => store.get(Number(speciesId)));
   const getAllSpeciesPrefs = () => run("speciesPrefs", "readonly", store => store.getAll());
+  const putSeriesGoal = goal => run("seriesGoals", "readwrite", store => store.put(goal));
+  const deleteSeriesGoal = id => run("seriesGoals", "readwrite", store => store.delete(id));
+  const getSeriesGoal = id => run("seriesGoals", "readonly", store => store.get(id));
+  const getAllSeriesGoals = () => run("seriesGoals", "readonly", store => store.getAll());
 
   async function clearCollections() {
     const db = await open();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(["figures", "speciesPrefs"], "readwrite");
+      const tx = db.transaction(["figures", "speciesPrefs", "seriesGoals"], "readwrite");
       tx.objectStore("figures").clear();
       tx.objectStore("speciesPrefs").clear();
+      tx.objectStore("seriesGoals").clear();
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
@@ -76,6 +86,7 @@ const FigureDB = (() => {
   return {
     open, getMeta, setMeta, putFigure, deleteFigure, getFigure,
     getAllFigures, getFiguresBySpecies, putSpeciesPref,
-    getSpeciesPref, getAllSpeciesPrefs, clearCollections
+    getSpeciesPref, getAllSpeciesPrefs, putSeriesGoal,
+    deleteSeriesGoal, getSeriesGoal, getAllSeriesGoals, clearCollections
   };
 })();
