@@ -141,6 +141,21 @@
       </div>
       <button class="icon-button" data-close-dialog="detailDialog" aria-label="닫기">×</button>
     </header>
+    <section id="formDexSection" class="form-dex-section" hidden>
+      <div class="form-dex-heading">
+        <div>
+          <p class="eyebrow">FORM DEX</p>
+          <h3>모습 도감</h3>
+        </div>
+        <strong id="detailFormRate">0%</strong>
+      </div>
+      <div class="form-progress-track" aria-hidden="true"><span id="detailFormBar"></span></div>
+      <div class="form-dex-foot">
+        <span id="detailFormCount">0 / 0모습</span>
+        <button id="clearDetailFormFilter" type="button" class="inline-action">전체 기록 보기</button>
+      </div>
+      <div id="detailFormGrid" class="detail-form-grid" aria-live="polite"></div>
+    </section>
     <div class="dialog-actions">
       <button id="addFigureButton" class="primary-button">＋ 피규어 기록하기</button>
     </div>
@@ -173,6 +188,7 @@
           <button id="startCameraButton" type="button" class="secondary-button">카메라 켜기</button>
           <button id="captureButton" type="button" class="primary-button" hidden>촬영</button>
           <button id="retakeButton" type="button" class="secondary-button" hidden>다시 찍기</button>
+          <button id="editPhotoButton" type="button" class="secondary-button" hidden>사진 편집</button>
           <label class="secondary-button file-button">
             기본 카메라
             <input id="fallbackPhotoInput" type="file" accept="image/*" capture="environment">
@@ -186,7 +202,15 @@
         <label>피규어 이름
           <input id="figureNameInput" name="figureName" placeholder="예: 몬콜레 피카츄">
         </label>
-        <label>모습·폼
+        <input id="formKeyInput" type="hidden">
+        <div class="record-form-picker-block">
+          <div class="record-form-picker-heading">
+            <span>공식 모습 선택</span>
+            <small id="recordFormStatus">불러오는 중</small>
+          </div>
+          <div id="recordFormPicker" class="record-form-picker"></div>
+        </div>
+        <label>모습·폼 이름
           <input id="formInput" name="form" list="formSuggestions" placeholder="기본 모습">
           <datalist id="formSuggestions">
             <option value="기본 모습"></option>
@@ -261,6 +285,43 @@
         </label>
       </section>
     </form>
+  </dialog>
+
+
+  <dialog id="photoEditorDialog" class="full-dialog photo-editor-dialog">
+    <header class="dialog-header fixed-dialog-header">
+      <button id="cancelPhotoEditButton" class="text-button" type="button">취소</button>
+      <div class="dialog-title-center">
+        <strong>사진 편집</strong>
+        <small>드래그·두 손가락 확대 가능</small>
+      </div>
+      <button id="applyPhotoEditButton" class="text-button accent" type="button">적용</button>
+    </header>
+    <main class="photo-editor-main">
+      <div id="photoEditorStage" class="photo-editor-stage">
+        <canvas id="photoEditorCanvas" aria-label="사진 자르기 미리보기"></canvas>
+        <div class="crop-frame" aria-hidden="true"></div>
+      </div>
+      <div class="photo-editor-controls">
+        <div class="editor-button-row">
+          <button id="rotateLeftButton" type="button" class="secondary-button">↶ 왼쪽 회전</button>
+          <button id="rotateRightButton" type="button" class="secondary-button">↷ 오른쪽 회전</button>
+        </div>
+        <div class="aspect-buttons" aria-label="자르기 비율">
+          <button type="button" data-aspect="1" class="active">1:1</button>
+          <button type="button" data-aspect="0.8">4:5</button>
+          <button type="button" data-aspect="1.333333">4:3</button>
+          <button type="button" data-aspect="original">원본</button>
+        </div>
+        <label class="zoom-control">
+          <span>확대·축소</span>
+          <input id="photoZoomInput" type="range" min="1" max="4" step="0.01" value="1">
+          <output id="photoZoomValue">100%</output>
+        </label>
+        <button id="resetPhotoEditButton" type="button" class="secondary-button editor-reset-button">편집 초기화</button>
+        <p class="editor-help">사진을 끌어 위치를 조정하고, 슬라이더나 두 손가락으로 확대하세요. 적용하면 편집된 사진만 압축 저장됩니다.</p>
+      </div>
+    </main>
   </dialog>
 
   <dialog id="seriesDialog" class="sheet-dialog series-dialog">

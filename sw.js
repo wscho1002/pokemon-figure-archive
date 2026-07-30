@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pokemon-figure-archive-2026-v3";
+const CACHE_NAME = "pokemon-figure-archive-2026-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -39,7 +39,7 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  if (url.hostname === "raw.githubusercontent.com" && url.pathname.includes("/PokeAPI/pokeapi/")) {
+  if ((url.hostname === "raw.githubusercontent.com" && url.pathname.includes("/PokeAPI/pokeapi/")) || url.hostname === "pokeapi.co") {
     event.respondWith(
       caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
         const copy = response.clone();

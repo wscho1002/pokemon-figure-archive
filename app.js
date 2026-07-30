@@ -5,7 +5,7 @@ const DATA_URLS = {
   names: "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species_names.csv"
 };
 const ARTWORK_BASE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork";
-const CATALOG_CACHE_VERSION = 1;
+const CATALOG_CACHE_VERSION = 2;
 const KOREAN_LANGUAGE_ID = 3;
 
 const FALLBACK_CATALOG = [
@@ -26,6 +26,11 @@ const state = {
   currentSpecies: null,
   cameraStream: null,
   pendingPhoto: null,
+  currentForms: [],
+  selectedDetailFormKey: "all",
+  recordExistingPhotoBlob: null,
+  formCache: new Map(),
+  photoEditor: null,
   objectUrls: { grid: new Set(), detail: new Set(), record: new Set(), recent: new Set(), achievement: new Set() },
   renderToken: 0
 };
@@ -54,11 +59,12 @@ function bindRefs() {
     "ownershipFilter","generationFilter","sortFilter","makerFilter","seriesFilter",
     "clearCollectionFilters","loadingPanel","loadingTitle",
     "loadingMessage","pokemonGrid","emptyMessage","detailDialog","detailNumber",
-    "detailName","detailSubtext","addFigureButton","figureList","recordDialog",
+    "detailName","detailSubtext","formDexSection","detailFormRate","detailFormBar",
+    "detailFormCount","clearDetailFormFilter","detailFormGrid","addFigureButton","figureList","recordDialog",
     "recordPokemonName","recordModeText","saveFigureButton","figureForm","editingFigureId",
     "cameraStage","cameraVideo","photoPreview","cameraPlaceholder","startCameraButton",
-    "captureButton","retakeButton","fallbackPhotoInput","photoSizeText","figureNameInput",
-    "formInput","makerInput","seriesInput","makerSuggestions","seriesSuggestions",
+    "captureButton","retakeButton","editPhotoButton","fallbackPhotoInput","photoSizeText","figureNameInput",
+    "formKeyInput","formInput","recordFormStatus","recordFormPicker","makerInput","seriesInput","makerSuggestions","seriesSuggestions",
     "productCodeInput","sourceInput","priceInput",
     "currencyInput","purchaseDateInput","conditionInput","locationInput","notesInput",
     "setAsCoverInput","seriesDialog","seriesGoalForm","editingSeriesGoalId","goalMakerInput",
@@ -66,7 +72,10 @@ function bindRefs() {
     "settingsDialog","exportButton","importInput","refreshCatalogButton",
     "requestStorageButton","storageStatus","storageUsage","achievementDialog",
     "achievementImage","achievementNumber","achievementName","achievementOldRate",
-    "achievementNewRate","achievementConfirmButton","closeAchievementButton","toast","captureCanvas"
+    "achievementNewRate","achievementConfirmButton","closeAchievementButton","photoEditorDialog",
+    "cancelPhotoEditButton","applyPhotoEditButton","photoEditorStage","photoEditorCanvas",
+    "rotateLeftButton","rotateRightButton","photoZoomInput","photoZoomValue",
+    "resetPhotoEditButton","toast","captureCanvas"
   ].forEach(id => refs[id] = document.getElementById(id));
 }
 
@@ -126,7 +135,28 @@ function bindEvents() {
   refs.startCameraButton.addEventListener("click", startCamera);
   refs.captureButton.addEventListener("click", captureFromVideo);
   refs.retakeButton.addEventListener("click", resetPhotoCapture);
+  refs.editPhotoButton.addEventListener("click", editCurrentPhoto);
   refs.fallbackPhotoInput.addEventListener("change", handleFallbackPhoto);
+  refs.formInput.addEventListener("input", syncCustomFormInput);
+  refs.clearDetailFormFilter.addEventListener("click", () => {
+    state.selectedDetailFormKey = "all";
+    renderDetailFormDex();
+    renderFigureList();
+  });
+  refs.cancelPhotoEditButton.addEventListener("click", cancelPhotoEditor);
+  refs.applyPhotoEditButton.addEventListener("click", applyPhotoEditor);
+  refs.rotateLeftButton.addEventListener("click", () => rotatePhotoEditor(-90));
+  refs.rotateRightButton.addEventListener("click", () => rotatePhotoEditor(90));
+  refs.photoZoomInput.addEventListener("input", () => setPhotoEditorZoom(Number(refs.photoZoomInput.value)));
+  refs.resetPhotoEditButton.addEventListener("click", resetPhotoEditorTransform);
+  document.querySelectorAll("[data-aspect]").forEach(button => button.addEventListener("click", () => setPhotoEditorAspect(button.dataset.aspect)));
+  refs.photoEditorCanvas.addEventListener("pointerdown", onPhotoEditorPointerDown);
+  refs.photoEditorCanvas.addEventListener("pointermove", onPhotoEditorPointerMove);
+  refs.photoEditorCanvas.addEventListener("pointerup", onPhotoEditorPointerUp);
+  refs.photoEditorCanvas.addEventListener("pointercancel", onPhotoEditorPointerUp);
+  refs.photoEditorCanvas.addEventListener("wheel", onPhotoEditorWheel, { passive: false });
+  window.addEventListener("resize", () => { if (refs.photoEditorDialog.open) resizePhotoEditorCanvas(); });
+  refs.photoEditorDialog.addEventListener("close", disposePhotoEditor);
   refs.saveFigureButton.addEventListener("click", saveFigure);
   refs.exportButton.addEventListener("click", exportBackup);
   refs.importInput.addEventListener("change", importBackup);
@@ -921,6 +951,9 @@ async function saveFigure() {
       speciesSlug: state.currentSpecies.slug,
       figureName: refs.figureNameInput.value.trim(),
       form: refs.formInput.value.trim() || "기본 모습",
+      formKey: refs.formKeyInput.value || inferCustomFormKey(refs.formInput.value),
+      formImageUrl: getSelectedRecordForm()?.imageUrl || existing?.formImageUrl || "",
+      formIsOfficial: Boolean(getSelectedRecordForm()?.official),
       maker: refs.makerInput.value.trim(),
       series: refs.seriesInput.value.trim(),
       productCode: refs.productCodeInput.value.trim(),
@@ -948,6 +981,7 @@ async function saveFigure() {
     populateCollectionControls();
     renderStats();
     renderDashboard();
+    renderDetailFormDex();
     refs.recordDialog.close();
     renderFigureList();
     renderGrid();
@@ -1013,6 +1047,7 @@ async function removeFigure(figure) {
   }
   renderStats();
   renderDashboard();
+  renderDetailFormDex();
   renderFigureList();
   renderGrid();
   refs.detailSubtext.textContent = remaining.length ? `등록한 피규어 ${remaining.length}개` : "아직 등록한 피규어가 없습니다.";
@@ -1252,4 +1287,750 @@ function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(error => console.error("SW registration failed", error));
   }
+}
+
+
+/* v4: 공식 폼 도감 + 사진 편집기 */
+
+async function fetchJSON(url) {
+  const response = await fetch(url, { cache: "no-cache" });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+async function ensureSpeciesForms(pokemon = state.currentSpecies) {
+  if (!pokemon) return [];
+  if (state.formCache.has(pokemon.id)) return state.formCache.get(pokemon.id);
+  const metaKey = `speciesFormsV1:${pokemon.id}`;
+  const cached = await FigureDB.getMeta(metaKey);
+  if (Array.isArray(cached) && cached.length) {
+    state.formCache.set(pokemon.id, cached);
+    return cached;
+  }
+
+  const fallback = [{
+    key: `species:${pokemon.id}:default`,
+    id: pokemon.id,
+    name: pokemon.slug,
+    label: "기본 모습",
+    imageUrl: pokemon.imageUrl,
+    official: true,
+    isDefault: true,
+    isMega: false,
+    isBattleOnly: false,
+    aliases: [pokemon.slug, pokemon.name, "기본 모습"]
+  }];
+
+  try {
+    const species = await fetchJSON(`https://pokeapi.co/api/v2/pokemon-species/${pokemon.id}/`);
+    const varietyResults = await Promise.allSettled((species.varieties || []).map(async variety => {
+      const pokemonData = await fetchJSON(variety.pokemon.url);
+      const formRefs = pokemonData.forms?.length ? pokemonData.forms : [{ name: pokemonData.name, url: `https://pokeapi.co/api/v2/pokemon-form/${pokemonData.id}/` }];
+      const formResults = await Promise.allSettled(formRefs.map(ref => fetchJSON(ref.url)));
+      const forms = [];
+      for (const result of formResults) {
+        if (result.status !== "fulfilled") continue;
+        const formData = result.value;
+        forms.push(buildOfficialFormOption(pokemon, pokemonData, formData, variety.is_default));
+      }
+      if (!forms.length) {
+        forms.push(buildOfficialFormOption(pokemon, pokemonData, {
+          id: pokemonData.id,
+          name: pokemonData.name,
+          form_name: "",
+          is_default: variety.is_default,
+          is_mega: false,
+          is_battle_only: false,
+          names: [],
+          sprites: pokemonData.sprites
+        }, variety.is_default));
+      }
+
+      const femaleImage = pokemonData.sprites?.other?.home?.front_female || pokemonData.sprites?.front_female;
+      if (femaleImage) {
+        const base = forms.find(form => form.isDefault) || forms[0];
+        forms.push({
+          key: `gender-female:${pokemonData.id}`,
+          id: `female-${pokemonData.id}`,
+          name: `${pokemonData.name}-female`,
+          label: base?.isDefault ? "암컷 모습" : `${base.label} · 암컷`,
+          imageUrl: femaleImage,
+          official: true,
+          isDefault: false,
+          isMega: Boolean(base?.isMega),
+          isBattleOnly: Boolean(base?.isBattleOnly),
+          aliases: ["암컷", "암컷 모습", `${pokemonData.name}-female`]
+        });
+      }
+      return forms;
+    }));
+
+    const all = varietyResults.flatMap(result => result.status === "fulfilled" ? result.value : []);
+    const unique = [];
+    const seen = new Set();
+    for (const form of all) {
+      if (!form || seen.has(form.key)) continue;
+      seen.add(form.key);
+      unique.push(form);
+    }
+    if (!unique.some(form => form.isDefault)) unique.unshift(fallback[0]);
+    unique.sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || Number(a.isMega) - Number(b.isMega) || a.label.localeCompare(b.label, "ko"));
+    const result = unique.length ? unique : fallback;
+    state.formCache.set(pokemon.id, result);
+    await FigureDB.setMeta(metaKey, result);
+    return result;
+  } catch (error) {
+    console.error("폼 데이터 로드 실패", error);
+    state.formCache.set(pokemon.id, fallback);
+    return fallback;
+  }
+}
+
+function buildOfficialFormOption(pokemon, pokemonData, formData, varietyIsDefault) {
+  const localizedName = getKoreanName(formData.names);
+  const rawFormName = cleanText(formData.form_name || "");
+  const isDefault = Boolean(varietyIsDefault && (formData.is_default ?? true) && !rawFormName);
+  const label = makeKoreanFormLabel(pokemon, pokemonData.name, formData.name, rawFormName, localizedName, isDefault, formData.is_mega);
+  const multipleForms = (pokemonData.forms?.length || 0) > 1;
+  const officialArt = pokemonData.sprites?.other?.["official-artwork"]?.front_default;
+  const homeArt = pokemonData.sprites?.other?.home?.front_default;
+  const formSprite = formData.sprites?.front_default;
+  const imageUrl = multipleForms ? (formSprite || homeArt || officialArt) : (officialArt || homeArt || formSprite || pokemonData.sprites?.front_default || pokemon.imageUrl);
+  return {
+    key: `pokeform:${formData.id || `${pokemonData.id}-${formData.name}`}`,
+    id: formData.id || pokemonData.id,
+    pokemonId: pokemonData.id,
+    name: formData.name || pokemonData.name,
+    label,
+    imageUrl,
+    official: true,
+    isDefault,
+    isMega: Boolean(formData.is_mega),
+    isBattleOnly: Boolean(formData.is_battle_only),
+    aliases: [formData.name, pokemonData.name, rawFormName, localizedName, label].filter(Boolean)
+  };
+}
+
+function getKoreanName(names) {
+  return cleanText((names || []).find(row => row.language?.name === "ko")?.name || "");
+}
+
+function makeKoreanFormLabel(pokemon, pokemonName, formName, rawFormName, localizedName, isDefault, isMega) {
+  if (isDefault) return "기본 모습";
+  if (localizedName && normalizeFormText(localizedName, pokemon.name) !== normalizeFormText(pokemon.name, pokemon.name)) {
+    return localizedName;
+  }
+  const source = cleanText(rawFormName || formName || pokemonName).toLowerCase();
+  const suffix = source.replace(new RegExp(`^${pokemon.slug}-?`), "").replace(new RegExp(`^${pokemonName}-?`), "");
+  const translations = [
+    [/mega-x|mega x/, "메가진화 X"], [/mega-y|mega y/, "메가진화 Y"], [/mega/, "메가진화"],
+    [/gmax|gigantamax/, "거다이맥스"], [/alola/, "알로라의 모습"], [/galar/, "가라르의 모습"],
+    [/hisui/, "히스이의 모습"], [/paldea/, "팔데아의 모습"], [/origin/, "오리진폼"],
+    [/altered/, "어나더폼"], [/attack/, "어택폼"], [/defense/, "디펜스폼"], [/speed/, "스피드폼"],
+    [/sunny/, "태양의 모습"], [/rainy/, "빗방울의 모습"], [/snowy/, "설운의 모습"],
+    [/east/, "동쪽바다의 모습"], [/west/, "서쪽바다의 모습"], [/female/, "암컷 모습"],
+    [/male/, "수컷 모습"], [/school/, "군집의 모습"], [/solo/, "단독의 모습"],
+    [/blade/, "블레이드폼"], [/shield/, "실드폼"], [/complete/, "퍼펙트폼"],
+    [/therian/, "영물폼"], [/incarnate/, "화신폼"], [/sky/, "스카이폼"], [/land/, "랜드폼"],
+    [/white/, "화이트"], [/black/, "블랙"], [/dusk/, "황혼의 모습"], [/dawn/, "새벽의 모습"],
+    [/midnight/, "한밤중의 모습"], [/midday/, "한낮의 모습"], [/low-key/, "로우한 모습"],
+    [/amped/, "하이한 모습"], [/crowned/, "왕의 모습"], [/eternamax/, "무한다이맥스"]
+  ];
+  for (const [pattern, label] of translations) if (pattern.test(suffix || source)) return label;
+  if (isMega) return "메가진화";
+  const readable = humanize(suffix || source).replace(/\bForme?\b/gi, "").trim();
+  return readable || "다른 모습";
+}
+
+function normalizeFormText(value, speciesName = "") {
+  return cleanText(value)
+    .toLocaleLowerCase("ko-KR")
+    .replace(cleanText(speciesName).toLocaleLowerCase("ko-KR"), "")
+    .replace(/의\s*모습|모습|폼|진화|[\s·_()\-]/g, "");
+}
+
+function inferCustomFormKey(value) {
+  const normalized = normalizeFormText(value || "기본 모습", state.currentSpecies?.name || "");
+  if (!normalized || normalized === normalizeFormText("기본 모습")) {
+    return state.currentForms.find(form => form.isDefault)?.key || `species:${state.currentSpecies?.id || 0}:default`;
+  }
+  return `custom:${normalized}`;
+}
+
+function matchFigureToForm(figure, forms = state.currentForms) {
+  if (figure.formKey) {
+    const exact = forms.find(form => form.key === figure.formKey);
+    if (exact) return exact;
+  }
+  const normalized = normalizeFormText(figure.form || "기본 모습", state.currentSpecies?.name || figure.speciesName || "");
+  return forms.find(form => [form.label, form.name, ...(form.aliases || [])].some(alias => normalizeFormText(alias, state.currentSpecies?.name || "") === normalized)) || null;
+}
+
+function figureResolvedFormKey(figure) {
+  return matchFigureToForm(figure)?.key || figure.formKey || inferCustomFormKey(figure.form);
+}
+
+async function openDetail(speciesId) {
+  const pokemon = state.catalog.find(item => item.id === Number(speciesId));
+  if (!pokemon) return;
+  state.currentSpecies = pokemon;
+  state.selectedDetailFormKey = "all";
+  state.currentForms = [];
+  refs.detailNumber.textContent = `NATIONAL DEX #${String(pokemon.id).padStart(4, "0")} · ${pokemon.generation}세대`;
+  refs.detailName.textContent = pokemon.name;
+  const figures = state.figuresBySpecies.get(pokemon.id) || [];
+  refs.detailSubtext.textContent = figures.length ? `등록한 피규어 ${figures.length}개` : "아직 등록한 피규어가 없습니다.";
+  refs.formDexSection.hidden = false;
+  refs.detailFormGrid.innerHTML = '<div class="form-loading">공식 모습을 불러오는 중…</div>';
+  refs.detailFormRate.textContent = "—";
+  refs.detailFormCount.textContent = "확인 중";
+  refs.detailFormBar.style.width = "0%";
+  renderFigureList();
+  refs.detailDialog.showModal();
+  state.currentForms = await ensureSpeciesForms(pokemon);
+  if (state.currentSpecies?.id !== pokemon.id) return;
+  renderDetailFormDex();
+}
+
+function getCustomFormGroups() {
+  const figures = state.figuresBySpecies.get(state.currentSpecies?.id) || [];
+  const groups = new Map();
+  for (const figure of figures) {
+    const official = matchFigureToForm(figure);
+    if (official) continue;
+    const key = figure.formKey || inferCustomFormKey(figure.form);
+    if (!groups.has(key)) groups.set(key, { key, label: figure.form || "사용자 정의", official: false, count: 0, imageUrl: figure.formImageUrl || state.currentSpecies?.imageUrl });
+    groups.get(key).count++;
+  }
+  return [...groups.values()];
+}
+
+function renderDetailFormDex() {
+  if (!state.currentSpecies) return;
+  const forms = state.currentForms.length ? state.currentForms : [{ key: `species:${state.currentSpecies.id}:default`, label: "기본 모습", imageUrl: state.currentSpecies.imageUrl, official: true, isDefault: true }];
+  const figures = state.figuresBySpecies.get(state.currentSpecies.id) || [];
+  const ownedKeys = new Set(figures.map(figureResolvedFormKey));
+  const officialOwned = forms.filter(form => ownedKeys.has(form.key)).length;
+  const rate = forms.length ? officialOwned / forms.length * 100 : 0;
+  refs.detailFormRate.textContent = formatRate(rate);
+  refs.detailFormCount.textContent = `${officialOwned} / ${forms.length}모습`;
+  requestAnimationFrame(() => { refs.detailFormBar.style.width = `${Math.min(100, rate)}%`; });
+  refs.clearDetailFormFilter.hidden = state.selectedDetailFormKey === "all";
+  refs.detailFormGrid.replaceChildren();
+  const fragment = document.createDocumentFragment();
+  const allForms = [...forms, ...getCustomFormGroups()];
+  for (const form of allForms) {
+    const count = figures.filter(figure => figureResolvedFormKey(figure) === form.key).length;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `detail-form-card${count ? " owned" : ""}${state.selectedDetailFormKey === form.key ? " active" : ""}`;
+    button.innerHTML = `
+      <span class="detail-form-image"><img loading="lazy" src="${escapeHTML(form.imageUrl || state.currentSpecies.imageUrl)}" alt="${escapeHTML(form.label)}"></span>
+      <span class="detail-form-info"><strong>${escapeHTML(form.label)}</strong><small>${form.official ? (form.isBattleOnly ? "전투 중 모습" : "공식 모습") : "사용자 정의"} · ${count ? `보유 ${count}개` : "미보유"}</small></span>
+      ${count ? `<b>${count}</b>` : ""}`;
+    button.addEventListener("click", () => {
+      state.selectedDetailFormKey = state.selectedDetailFormKey === form.key ? "all" : form.key;
+      renderDetailFormDex();
+      renderFigureList();
+    });
+    fragment.append(button);
+  }
+  refs.detailFormGrid.append(fragment);
+}
+
+function renderFigureList() {
+  revokeObjectUrls("detail");
+  const pokemon = state.currentSpecies;
+  if (!pokemon) return;
+  const allFigures = state.figuresBySpecies.get(pokemon.id) || [];
+  const figures = state.selectedDetailFormKey === "all" ? allFigures : allFigures.filter(figure => figureResolvedFormKey(figure) === state.selectedDetailFormKey);
+  const cover = getCoverFigure(pokemon.id, allFigures);
+  refs.figureList.replaceChildren();
+  if (!figures.length) {
+    const selected = state.currentForms.find(form => form.key === state.selectedDetailFormKey) || getCustomFormGroups().find(form => form.key === state.selectedDetailFormKey);
+    refs.figureList.innerHTML = `<div class="figure-empty">${selected ? `${escapeHTML(selected.label)} 피규어를 아직 기록하지 않았습니다.` : `사진을 찍어 첫 번째 ${escapeHTML(pokemon.name)} 피규어를 기록하세요.`}</div>`;
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const figure of figures) {
+    const item = document.createElement("article");
+    item.className = "figure-item";
+    const thumbUrl = figure.thumbBlob ? URL.createObjectURL(figure.thumbBlob) : pokemon.imageUrl;
+    if (figure.thumbBlob) state.objectUrls.detail.add(thumbUrl);
+    const price = formatPrice(figure.price, figure.currency);
+    const meta = [figure.form || "기본 모습", figure.maker, figure.series, price, figure.source].filter(Boolean).join(" · ");
+    item.innerHTML = `
+      <div class="figure-thumb">
+        <img src="${thumbUrl}" alt="${escapeHTML(figure.figureName || pokemon.name)}">
+        ${cover?.id === figure.id ? `<span class="cover-label">대표</span>` : ""}
+      </div>
+      <div class="figure-content">
+        <h3>${escapeHTML(figure.figureName || `${pokemon.name} 피규어`)}</h3>
+        <p class="figure-meta">${escapeHTML(meta || "상세 정보 없음")}</p>
+        ${figure.notes ? `<p class="figure-notes">${escapeHTML(figure.notes)}</p>` : ""}
+        <div class="item-actions">
+          ${cover?.id !== figure.id ? `<button class="mini-button" data-action="cover">대표 지정</button>` : ""}
+          <button class="mini-button" data-action="edit">수정</button>
+          <button class="mini-button danger" data-action="delete">삭제</button>
+        </div>
+      </div>`;
+    item.querySelector('[data-action="cover"]')?.addEventListener("click", () => setCoverFigure(figure.id));
+    item.querySelector('[data-action="edit"]').addEventListener("click", () => openRecordDialog(figure));
+    item.querySelector('[data-action="delete"]').addEventListener("click", () => removeFigure(figure));
+    fragment.append(item);
+  }
+  refs.figureList.append(fragment);
+}
+
+function renderRecordFormPicker(selectedKey = refs.formKeyInput.value) {
+  const forms = state.currentForms.length ? state.currentForms : [{ key: `species:${state.currentSpecies?.id || 0}:default`, label: "기본 모습", imageUrl: state.currentSpecies?.imageUrl, official: true, isDefault: true }];
+  refs.recordFormPicker.replaceChildren();
+  const fragment = document.createDocumentFragment();
+  for (const form of forms) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `record-form-option${selectedKey === form.key ? " active" : ""}`;
+    button.innerHTML = `<img src="${escapeHTML(form.imageUrl || state.currentSpecies.imageUrl)}" alt=""><span>${escapeHTML(form.label)}</span>`;
+    button.addEventListener("click", () => selectRecordForm(form));
+    fragment.append(button);
+  }
+  const custom = document.createElement("button");
+  custom.type = "button";
+  custom.className = `record-form-option custom${selectedKey?.startsWith("custom:") ? " active" : ""}`;
+  custom.innerHTML = `<span class="custom-form-icon">＋</span><span>직접 입력</span>`;
+  custom.addEventListener("click", () => {
+    refs.formKeyInput.value = inferCustomFormKey(refs.formInput.value || "특별 의상");
+    refs.formInput.focus();
+    renderRecordFormPicker(refs.formKeyInput.value);
+  });
+  fragment.append(custom);
+  refs.recordFormPicker.append(fragment);
+  refs.recordFormStatus.textContent = `${forms.length}개 공식 모습`;
+}
+
+function selectRecordForm(form) {
+  refs.formKeyInput.value = form.key;
+  refs.formInput.value = form.label;
+  renderRecordFormPicker(form.key);
+}
+
+function syncCustomFormInput() {
+  const match = state.currentForms.find(form => normalizeFormText(form.label, state.currentSpecies?.name || "") === normalizeFormText(refs.formInput.value, state.currentSpecies?.name || ""));
+  refs.formKeyInput.value = match?.key || inferCustomFormKey(refs.formInput.value);
+  renderRecordFormPicker(refs.formKeyInput.value);
+}
+
+function getSelectedRecordForm() {
+  return state.currentForms.find(form => form.key === refs.formKeyInput.value) || null;
+}
+
+function openRecordDialog(figure = null, preferredForm = null) {
+  if (!state.currentSpecies) return;
+  resetRecordDialog();
+  refs.recordPokemonName.textContent = state.currentSpecies.name;
+  refs.recordModeText.textContent = figure ? "기록 수정" : "새 피규어 기록";
+  refs.editingFigureId.value = figure?.id || "";
+  refs.figureNameInput.value = figure?.figureName || "";
+  const selected = figure ? (matchFigureToForm(figure) || null) : (preferredForm || state.currentForms.find(form => form.key === state.selectedDetailFormKey) || state.currentForms.find(form => form.isDefault) || state.currentForms[0]);
+  refs.formInput.value = figure?.form || selected?.label || "기본 모습";
+  refs.formKeyInput.value = figure?.formKey || selected?.key || inferCustomFormKey(refs.formInput.value);
+  refs.makerInput.value = figure?.maker || "";
+  refs.seriesInput.value = figure?.series || "";
+  refs.productCodeInput.value = figure?.productCode || "";
+  refs.sourceInput.value = figure?.source || "";
+  refs.priceInput.value = figure?.price ?? "";
+  refs.currencyInput.value = figure?.currency || "KRW";
+  refs.purchaseDateInput.value = figure?.purchaseDate || "";
+  refs.conditionInput.value = figure?.condition || "";
+  refs.locationInput.value = figure?.location || "";
+  refs.notesInput.value = figure?.notes || "";
+  refs.setAsCoverInput.checked = figure ? getCoverFigure(state.currentSpecies.id)?.id === figure.id : true;
+  state.recordExistingPhotoBlob = figure?.fullBlob || null;
+  renderRecordFormPicker(refs.formKeyInput.value);
+  if (figure?.fullBlob) showExistingPhoto(figure.fullBlob);
+  refs.recordDialog.showModal();
+  if (!state.currentForms.length) {
+    ensureSpeciesForms(state.currentSpecies).then(forms => {
+      if (!refs.recordDialog.open) return;
+      state.currentForms = forms;
+      const matched = figure ? matchFigureToForm(figure, forms) : forms.find(form => form.isDefault);
+      if (matched && (!figure?.formKey || refs.formKeyInput.value.startsWith("species:"))) {
+        refs.formKeyInput.value = matched.key;
+        if (!figure) refs.formInput.value = matched.label;
+      }
+      renderRecordFormPicker(refs.formKeyInput.value);
+    });
+  }
+}
+
+function uniqueFigureKey(figure) {
+  const code = normalizeKey(figure.productCode);
+  if (code) return `code:${code}`;
+  const name = normalizeKey(figure.figureName);
+  if (name) return `name:${name}`;
+  return `species:${Number(figure.speciesId)}:${figure.formKey || normalizeKey(figure.form || "기본 모습")}`;
+}
+
+async function captureFromVideo() {
+  const video = refs.cameraVideo;
+  if (!video.videoWidth || !video.videoHeight) return;
+  refs.captureCanvas.width = video.videoWidth;
+  refs.captureCanvas.height = video.videoHeight;
+  const ctx = refs.captureCanvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
+  const sourceBlob = await canvasToBlob(refs.captureCanvas, "image/jpeg", .94);
+  stopCamera();
+  await openPhotoEditor(sourceBlob);
+}
+
+async function handleFallbackPhoto(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    await openPhotoEditor(file);
+  } catch (error) {
+    console.error(error);
+    toast("이 사진을 읽지 못했습니다.");
+  }
+  event.target.value = "";
+}
+
+async function setPendingPhoto(sourceBlob) {
+  await openPhotoEditor(sourceBlob);
+}
+
+function showExistingPhoto(blob) {
+  state.pendingPhoto = null;
+  state.recordExistingPhotoBlob = blob;
+  showRecordPhotoPreview(blob, `현재 사진 ${formatBytes(blob.size)}`);
+}
+
+function showRecordPhotoPreview(blob, label = "") {
+  revokeObjectUrls("record");
+  const url = URL.createObjectURL(blob);
+  state.objectUrls.record.add(url);
+  refs.photoPreview.src = url;
+  refs.photoPreview.hidden = false;
+  refs.cameraVideo.hidden = true;
+  refs.cameraPlaceholder.hidden = true;
+  refs.startCameraButton.hidden = true;
+  refs.captureButton.hidden = true;
+  refs.retakeButton.hidden = false;
+  refs.editPhotoButton.hidden = false;
+  refs.photoSizeText.textContent = label;
+}
+
+async function editCurrentPhoto() {
+  const blob = state.pendingPhoto?.fullBlob || state.recordExistingPhotoBlob;
+  if (!blob) return;
+  await openPhotoEditor(blob);
+}
+
+async function openPhotoEditor(sourceBlob) {
+  disposePhotoEditor();
+  const source = await loadImage(sourceBlob);
+  state.photoEditor = {
+    source,
+    sourceBlob,
+    rotation: 0,
+    zoom: 1,
+    offsetX: 0,
+    offsetY: 0,
+    aspectMode: "1",
+    aspect: 1,
+    pointers: new Map(),
+    gesture: null
+  };
+  refs.photoZoomInput.value = "1";
+  refs.photoZoomValue.textContent = "100%";
+  updateAspectButtons();
+  refs.photoEditorDialog.showModal();
+  requestAnimationFrame(resizePhotoEditorCanvas);
+}
+
+function cancelPhotoEditor() {
+  if (refs.photoEditorDialog.open) refs.photoEditorDialog.close();
+}
+
+function disposePhotoEditor() {
+  const editor = state.photoEditor;
+  if (editor?.source?.close) editor.source.close();
+  state.photoEditor = null;
+}
+
+function resetPhotoEditorTransform() {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  editor.rotation = 0;
+  editor.zoom = 1;
+  editor.offsetX = 0;
+  editor.offsetY = 0;
+  refs.photoZoomInput.value = "1";
+  refs.photoZoomValue.textContent = "100%";
+  setPhotoEditorAspect("1");
+}
+
+function setPhotoEditorAspect(mode) {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  editor.aspectMode = String(mode);
+  editor.aspect = mode === "original" ? getEditorRotatedSize(editor).width / getEditorRotatedSize(editor).height : Number(mode);
+  editor.zoom = 1;
+  editor.offsetX = 0;
+  editor.offsetY = 0;
+  refs.photoZoomInput.value = "1";
+  refs.photoZoomValue.textContent = "100%";
+  updateAspectButtons();
+  resizePhotoEditorCanvas();
+}
+
+function updateAspectButtons() {
+  document.querySelectorAll("[data-aspect]").forEach(button => button.classList.toggle("active", button.dataset.aspect === state.photoEditor?.aspectMode));
+}
+
+function rotatePhotoEditor(delta) {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  editor.rotation = (editor.rotation + delta + 360) % 360;
+  editor.zoom = 1;
+  editor.offsetX = 0;
+  editor.offsetY = 0;
+  if (editor.aspectMode === "original") editor.aspect = getEditorRotatedSize(editor).width / getEditorRotatedSize(editor).height;
+  refs.photoZoomInput.value = "1";
+  refs.photoZoomValue.textContent = "100%";
+  resizePhotoEditorCanvas();
+}
+
+function setPhotoEditorZoom(value) {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  editor.zoom = Math.max(1, Math.min(4, Number(value) || 1));
+  refs.photoZoomInput.value = String(editor.zoom);
+  refs.photoZoomValue.textContent = `${Math.round(editor.zoom * 100)}%`;
+  clampPhotoEditorOffset();
+  drawPhotoEditorPreview();
+}
+
+function getEditorSourceSize(editor = state.photoEditor) {
+  return { width: editor?.source?.width || editor?.source?.naturalWidth || 1, height: editor?.source?.height || editor?.source?.naturalHeight || 1 };
+}
+
+function getEditorRotatedSize(editor = state.photoEditor) {
+  const size = getEditorSourceSize(editor);
+  return editor && editor.rotation % 180 ? { width: size.height, height: size.width } : size;
+}
+
+function resizePhotoEditorCanvas() {
+  const editor = state.photoEditor;
+  if (!editor || !refs.photoEditorDialog.open) return;
+  const availableWidth = refs.photoEditorStage.clientWidth || refs.photoEditorStage.parentElement?.clientWidth || window.innerWidth;
+  const widthCss = Math.max(260, Math.min(availableWidth, 760));
+  const heightCss = widthCss / Math.max(.45, Math.min(2.2, editor.aspect || 1));
+  const maxHeightCss = Math.max(260, Math.min(window.innerHeight * .58, 720));
+  const finalHeightCss = Math.min(heightCss, maxHeightCss);
+  const finalWidthCss = finalHeightCss * editor.aspect;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  refs.photoEditorCanvas.style.width = `${finalWidthCss}px`;
+  refs.photoEditorCanvas.style.height = `${finalHeightCss}px`;
+  refs.photoEditorCanvas.width = Math.max(1, Math.round(finalWidthCss * dpr));
+  refs.photoEditorCanvas.height = Math.max(1, Math.round(finalHeightCss * dpr));
+  const cropFrame = refs.photoEditorStage.querySelector(".crop-frame");
+  if (cropFrame) {
+    cropFrame.style.width = `${finalWidthCss}px`;
+    cropFrame.style.height = `${finalHeightCss}px`;
+  }
+  clampPhotoEditorOffset();
+  drawPhotoEditorPreview();
+}
+
+function getPhotoEditorDrawMetrics(canvas = refs.photoEditorCanvas, editor = state.photoEditor) {
+  const sourceSize = getEditorSourceSize(editor);
+  const rotated = getEditorRotatedSize(editor);
+  const baseScale = Math.max(canvas.width / rotated.width, canvas.height / rotated.height);
+  const scale = baseScale * editor.zoom;
+  return {
+    sourceWidth: sourceSize.width,
+    sourceHeight: sourceSize.height,
+    rotatedWidth: rotated.width * scale,
+    rotatedHeight: rotated.height * scale,
+    scale
+  };
+}
+
+function clampPhotoEditorOffset() {
+  const editor = state.photoEditor;
+  const canvas = refs.photoEditorCanvas;
+  if (!editor || !canvas.width) return;
+  const metrics = getPhotoEditorDrawMetrics(canvas, editor);
+  const maxX = Math.max(0, (metrics.rotatedWidth - canvas.width) / 2);
+  const maxY = Math.max(0, (metrics.rotatedHeight - canvas.height) / 2);
+  editor.offsetX = Math.max(-maxX, Math.min(maxX, editor.offsetX));
+  editor.offsetY = Math.max(-maxY, Math.min(maxY, editor.offsetY));
+}
+
+function drawPhotoEditorPreview() {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  drawPhotoEditorToCanvas(refs.photoEditorCanvas, editor.offsetX / refs.photoEditorCanvas.width, editor.offsetY / refs.photoEditorCanvas.height);
+}
+
+function drawPhotoEditorToCanvas(canvas, offsetRatioX = 0, offsetRatioY = 0) {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const metrics = getPhotoEditorDrawMetrics(canvas, editor);
+  ctx.save();
+  ctx.fillStyle = "#08090b";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(canvas.width / 2 + offsetRatioX * canvas.width, canvas.height / 2 + offsetRatioY * canvas.height);
+  ctx.rotate(editor.rotation * Math.PI / 180);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(editor.source, -metrics.sourceWidth * metrics.scale / 2, -metrics.sourceHeight * metrics.scale / 2, metrics.sourceWidth * metrics.scale, metrics.sourceHeight * metrics.scale);
+  ctx.restore();
+}
+
+function photoEditorPoint(event) {
+  const rect = refs.photoEditorCanvas.getBoundingClientRect();
+  return { x: (event.clientX - rect.left) * refs.photoEditorCanvas.width / rect.width, y: (event.clientY - rect.top) * refs.photoEditorCanvas.height / rect.height };
+}
+
+function onPhotoEditorPointerDown(event) {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  event.preventDefault();
+  refs.photoEditorCanvas.setPointerCapture?.(event.pointerId);
+  editor.pointers.set(event.pointerId, photoEditorPoint(event));
+  startPhotoEditorGesture();
+}
+
+function onPhotoEditorPointerMove(event) {
+  const editor = state.photoEditor;
+  if (!editor?.pointers.has(event.pointerId)) return;
+  event.preventDefault();
+  editor.pointers.set(event.pointerId, photoEditorPoint(event));
+  const points = [...editor.pointers.values()];
+  if (!editor.gesture) startPhotoEditorGesture();
+  if (points.length === 1 && editor.gesture?.type === "drag") {
+    editor.offsetX = editor.gesture.offsetX + points[0].x - editor.gesture.x;
+    editor.offsetY = editor.gesture.offsetY + points[0].y - editor.gesture.y;
+  } else if (points.length >= 2 && editor.gesture?.type === "pinch") {
+    const distance = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) || 1;
+    const midX = (points[0].x + points[1].x) / 2;
+    const midY = (points[0].y + points[1].y) / 2;
+    editor.zoom = Math.max(1, Math.min(4, editor.gesture.zoom * distance / editor.gesture.distance));
+    editor.offsetX = editor.gesture.offsetX + midX - editor.gesture.midX;
+    editor.offsetY = editor.gesture.offsetY + midY - editor.gesture.midY;
+    refs.photoZoomInput.value = String(editor.zoom);
+    refs.photoZoomValue.textContent = `${Math.round(editor.zoom * 100)}%`;
+  }
+  clampPhotoEditorOffset();
+  drawPhotoEditorPreview();
+}
+
+function onPhotoEditorPointerUp(event) {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  editor.pointers.delete(event.pointerId);
+  try { refs.photoEditorCanvas.releasePointerCapture?.(event.pointerId); } catch (_) {}
+  startPhotoEditorGesture();
+}
+
+function startPhotoEditorGesture() {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  const points = [...editor.pointers.values()];
+  if (points.length === 1) {
+    editor.gesture = { type: "drag", x: points[0].x, y: points[0].y, offsetX: editor.offsetX, offsetY: editor.offsetY };
+  } else if (points.length >= 2) {
+    editor.gesture = {
+      type: "pinch",
+      distance: Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) || 1,
+      midX: (points[0].x + points[1].x) / 2,
+      midY: (points[0].y + points[1].y) / 2,
+      zoom: editor.zoom,
+      offsetX: editor.offsetX,
+      offsetY: editor.offsetY
+    };
+  } else editor.gesture = null;
+}
+
+function onPhotoEditorWheel(event) {
+  if (!state.photoEditor) return;
+  event.preventDefault();
+  setPhotoEditorZoom(state.photoEditor.zoom * (event.deltaY > 0 ? .92 : 1.08));
+}
+
+async function applyPhotoEditor() {
+  const editor = state.photoEditor;
+  if (!editor) return;
+  refs.applyPhotoEditButton.disabled = true;
+  refs.applyPhotoEditButton.textContent = "처리 중";
+  try {
+    const aspect = editor.aspect || 1;
+    let width, height;
+    if (aspect >= 1) { width = 1440; height = Math.max(1, Math.round(1440 / aspect)); }
+    else { height = 1440; width = Math.max(1, Math.round(1440 * aspect)); }
+    const output = document.createElement("canvas");
+    output.width = width;
+    output.height = height;
+    const ratioX = editor.offsetX / refs.photoEditorCanvas.width;
+    const ratioY = editor.offsetY / refs.photoEditorCanvas.height;
+    drawPhotoEditorToCanvas(output, ratioX, ratioY);
+    let fullBlob = await canvasToBlob(output, "image/webp", .82);
+    if (!fullBlob || fullBlob.type !== "image/webp") fullBlob = await canvasToBlob(output, "image/jpeg", .84);
+    const fullImage = await loadImage(fullBlob);
+    const thumb = await resizeImage(fullImage, 360, .74);
+    fullImage.close?.();
+    state.pendingPhoto = { fullBlob, thumbBlob: thumb.blob };
+    state.recordExistingPhotoBlob = fullBlob;
+    if (refs.photoEditorDialog.open) refs.photoEditorDialog.close();
+    showRecordPhotoPreview(fullBlob, `${width}×${height} · 보관용 ${formatBytes(fullBlob.size)} · 썸네일 ${formatBytes(thumb.blob.size)}`);
+  } catch (error) {
+    console.error(error);
+    toast("사진 편집 결과를 만들지 못했습니다.");
+  } finally {
+    refs.applyPhotoEditButton.disabled = false;
+    refs.applyPhotoEditButton.textContent = "적용";
+  }
+}
+
+function resetPhotoCapture() {
+  stopCamera();
+  state.pendingPhoto = null;
+  state.recordExistingPhotoBlob = null;
+  refs.photoPreview.hidden = true;
+  refs.photoPreview.removeAttribute("src");
+  refs.cameraVideo.hidden = true;
+  refs.cameraPlaceholder.hidden = false;
+  refs.startCameraButton.hidden = false;
+  refs.captureButton.hidden = true;
+  refs.retakeButton.hidden = true;
+  refs.editPhotoButton.hidden = true;
+  refs.photoSizeText.textContent = "";
+  revokeObjectUrls("record");
+}
+
+function resetRecordDialog() {
+  stopCamera();
+  if (refs.photoEditorDialog?.open) refs.photoEditorDialog.close();
+  state.pendingPhoto = null;
+  state.recordExistingPhotoBlob = null;
+  refs.figureForm.reset();
+  refs.editingFigureId.value = "";
+  refs.formInput.value = "기본 모습";
+  refs.formKeyInput.value = `species:${state.currentSpecies?.id || 0}:default`;
+  refs.currencyInput.value = "KRW";
+  refs.setAsCoverInput.checked = true;
+  refs.photoPreview.hidden = true;
+  refs.photoPreview.removeAttribute("src");
+  refs.cameraVideo.hidden = true;
+  refs.cameraPlaceholder.hidden = false;
+  refs.startCameraButton.hidden = false;
+  refs.captureButton.hidden = true;
+  refs.retakeButton.hidden = true;
+  refs.editPhotoButton.hidden = true;
+  refs.photoSizeText.textContent = "";
+  refs.recordFormPicker?.replaceChildren();
+  revokeObjectUrls("record");
 }

@@ -492,3 +492,100 @@ dialog::backdrop { background: rgba(0, 0, 0, .62); backdrop-filter: blur(3px); }
   .series-goal-item { align-items: flex-start; flex-direction: column; }
   .series-goal-item .item-actions { width: 100%; }
 }
+
+/* v4: 모습 도감 */
+.form-dex-section {
+  margin: 0 18px 15px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--bg);
+}
+.form-dex-heading, .form-dex-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.form-dex-heading h3 { margin: 0; font-size: 16px; }
+.form-dex-heading strong { color: var(--accent); font-size: 22px; }
+.form-progress-track { height: 8px; margin: 11px 0 8px; overflow: hidden; border-radius: 999px; background: #292e37; }
+.form-progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ffb82e, var(--accent)); transition: width .55s ease; }
+.form-dex-foot { color: var(--muted); font-size: 10px; }
+.detail-form-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(178px, 65%);
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.detail-form-grid::-webkit-scrollbar { display: none; }
+.form-loading { grid-column: 1 / -1; padding: 25px 10px; color: var(--muted); font-size: 11px; text-align: center; }
+.detail-form-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.detail-form-card.owned { border-color: rgba(255, 203, 61, .46); }
+.detail-form-card.active { border-color: var(--accent); background: rgba(255, 203, 61, .1); box-shadow: inset 0 0 0 1px rgba(255, 203, 61, .18); }
+.detail-form-image { display: grid; place-items: center; width: 62px; aspect-ratio: 1; overflow: hidden; border-radius: 11px; background: radial-gradient(circle, #343a47, #181b21 72%); }
+.detail-form-image img { width: 100%; height: 100%; object-fit: contain; }
+.detail-form-info { min-width: 0; }
+.detail-form-info strong, .detail-form-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-form-info strong { font-size: 12px; }
+.detail-form-info small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.detail-form-card b { position: absolute; right: 6px; bottom: 6px; min-width: 21px; padding: 3px 5px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 9px; text-align: center; }
+
+.record-form-picker-block { min-width: 0; }
+.record-form-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: #d9dee6; font-size: 12px; font-weight: 700; }
+.record-form-picker-heading small { color: var(--muted); font-size: 9px; font-weight: 600; }
+.record-form-picker { display: grid; grid-auto-flow: column; grid-auto-columns: 91px; gap: 8px; overflow-x: auto; padding: 1px 1px 5px; scrollbar-width: none; }
+.record-form-picker::-webkit-scrollbar { display: none; }
+.record-form-option { overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); color: var(--text); cursor: pointer; }
+.record-form-option.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(255, 203, 61, .24); }
+.record-form-option img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; background: radial-gradient(circle, #343a47, #171a20 72%); }
+.record-form-option span { display: block; overflow: hidden; padding: 7px 6px; font-size: 9px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.record-form-option.custom { display: grid; grid-template-rows: 1fr auto; min-height: 121px; }
+.record-form-option .custom-form-icon { display: grid; place-items: center; padding: 0; color: var(--accent); font-size: 29px; }
+
+/* v4: 사진 자르기·회전 편집기 */
+.photo-editor-dialog { overflow-y: auto; background: #08090b; }
+.photo-editor-main { display: grid; gap: 18px; width: min(100%, 820px); margin: 0 auto; padding: 16px 16px calc(34px + var(--safe-bottom)); }
+.photo-editor-stage { position: relative; display: grid; place-items: center; width: 100%; min-height: 280px; overflow: hidden; border-radius: 18px; background: #030405; }
+.photo-editor-stage canvas { display: block; max-width: 100%; max-height: 62vh; background: #08090b; cursor: grab; touch-action: none; }
+.photo-editor-stage canvas:active { cursor: grabbing; }
+.crop-frame { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.62), inset 0 0 0 9999px rgba(0,0,0,.04); }
+.photo-editor-controls { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.editor-button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.aspect-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.aspect-buttons button { min-height: 38px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 800; cursor: pointer; }
+.aspect-buttons button.active { border-color: var(--accent); background: rgba(255,203,61,.12); color: var(--accent); }
+.zoom-control { display: grid; grid-template-columns: auto minmax(0, 1fr) 44px; align-items: center; gap: 10px; color: #d9dee6; font-size: 11px; font-weight: 750; }
+.zoom-control input { width: 100%; accent-color: var(--accent); }
+.zoom-control output { color: var(--accent); font-size: 10px; text-align: right; }
+.editor-reset-button { width: 100%; }
+.editor-help { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+
+@media (min-width: 700px) {
+  .detail-form-grid { grid-auto-columns: minmax(200px, 33%); }
+  .photo-editor-main { grid-template-columns: minmax(0, 1.4fr) minmax(260px, .7fr); align-items: start; }
+  .photo-editor-controls { position: sticky; top: 84px; }
+}
+.photo-editor-stage { width: fit-content; max-width: 100%; min-height: 0; margin: 0 auto; }
+.photo-editor-stage { width: 100%; max-width: none; min-height: 280px; margin: 0; }
+.crop-frame { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); }
