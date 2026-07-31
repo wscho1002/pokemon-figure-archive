@@ -41,6 +41,7 @@ const refs = {};
 window.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  installMobileZoomGuards();
   bindRefs();
   bindEvents();
   registerServiceWorker();
@@ -48,6 +49,34 @@ async function init() {
   await loadAppData();
   renderAll();
   updateStorageInfo();
+}
+
+
+
+function installMobileZoomGuards() {
+  // iOS Safari의 페이지 핀치 확대를 막되 사진 편집기의 자체 핀치 동작은 유지합니다.
+  const preventNativeGesture = event => {
+    if (event.cancelable) event.preventDefault();
+  };
+
+  ["gesturestart", "gesturechange", "gestureend"].forEach(type => {
+    document.addEventListener(type, preventNativeGesture, { passive: false });
+  });
+
+  // 일반 영역의 빠른 두 번 탭 확대를 방지합니다.
+  let lastTouchEnd = 0;
+  document.addEventListener("touchend", event => {
+    const target = event.target instanceof Element ? event.target : null;
+    const editorTarget = target?.closest("#photoEditorCanvas, .photo-editor-stage");
+    if (editorTarget) {
+      lastTouchEnd = 0;
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastTouchEnd < 320 && event.cancelable) event.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
 }
 
 function bindRefs() {

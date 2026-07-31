@@ -589,3 +589,49 @@ dialog::backdrop { background: rgba(0, 0, 0, .62); backdrop-filter: blur(3px); }
 .photo-editor-stage { width: fit-content; max-width: 100%; min-height: 0; margin: 0 auto; }
 .photo-editor-stage { width: 100%; max-width: none; min-height: 280px; margin: 0; }
 .crop-frame { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+
+/* v4.1 모바일 확대 방지 및 입력 편의성 */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: pan-x pan-y;
+}
+
+body,
+button,
+a,
+[role="button"],
+.pokemon-card,
+.recent-card,
+.generation-row,
+.maker-chip,
+.series-card,
+.detail-form-card,
+.record-form-option {
+  touch-action: manipulation;
+}
+
+/* 사진 편집기는 페이지 확대 대신 앱 자체 드래그·핀치 동작을 사용합니다. */
+.photo-editor-stage,
+.photo-editor-stage canvas {
+  touch-action: none;
+}
+
+@media (max-width: 900px) {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .search-box input {
+    font-size: 16px !important;
+  }
+
+  .filter-row select,
+  .collection-filter-row select {
+    font-size: 16px !important;
+    letter-spacing: -0.025em;
+  }
+}
