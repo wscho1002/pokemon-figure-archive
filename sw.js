@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pokemon-figure-archive-2026-v5-1-ui";
+const CACHE_NAME = "pokemon-figure-archive-2026-v5-2-max";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./db.js",
   "./app.js",
   "./online.js",
+  "./enhancements.js",
   "./supabase-config.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",

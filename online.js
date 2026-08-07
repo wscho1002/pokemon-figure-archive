@@ -5,6 +5,7 @@ const OnlineArchive = (() => {
   let user = null;
   let profile = null;
   let compareData = null;
+  let syncing = false;
   const config = window.SUPABASE_CONFIG || {};
   const $id = id => document.getElementById(id);
 
@@ -203,6 +204,7 @@ const OnlineArchive = (() => {
 
     if (!user) {
       if (menuStatus) menuStatus.textContent = configured() ? "로그인이 필요합니다" : "Supabase 설정 필요";
+      window.dispatchEvent(new CustomEvent("figurearchive:auth", { detail: { loggedIn: false } }));
       return;
     }
 
@@ -211,6 +213,7 @@ const OnlineArchive = (() => {
     const ready = await ensureProfile();
     if (ready) {
       setStatus("클라우드 연결됨", "success");
+      window.dispatchEvent(new CustomEvent("figurearchive:auth", { detail: { loggedIn: true, userId: user.id, nickname: profile?.nickname || "" } }));
       await loadFriends();
     }
   }
@@ -362,10 +365,12 @@ const OnlineArchive = (() => {
     };
   }
 
-  async function uploadCollection() {
-    if (!user) return setStatus("로그인이 필요합니다.", "error");
+  async function uploadCollection(options = {}) {
+    if (!user) { setStatus("로그인이 필요합니다.", "error"); return false; }
+    if (syncing) return false;
+    syncing = true;
     const button = $id("uploadCloudButton");
-    button.disabled = true;
+    if (button) button.disabled = true;
     try {
       const currentProfile = await requireProfile();
       const total = state.figures.length;
@@ -388,6 +393,7 @@ const OnlineArchive = (() => {
         rows.push(publicFigureRow(figure, thumbPath));
         if ((index + 1) % 10 === 0 || index === total - 1) {
           setStatus(`${index + 1} / ${total} 업로드 중`, "working");
+          window.dispatchEvent(new CustomEvent("figurearchive:sync-progress", { detail: { current: index + 1, total } }));
         }
       }
 
@@ -405,13 +411,21 @@ const OnlineArchive = (() => {
         if (error) throw error;
       }
 
+      const syncedAt = new Date().toISOString();
+      localStorage.setItem("pokemon-figure-last-sync", syncedAt);
+      localStorage.removeItem("pokemon-figure-sync-dirty");
       setStatus(`동기화 완료 · ${rows.length}개`, "success");
+      window.dispatchEvent(new CustomEvent("figurearchive:synced", { detail: { count: rows.length, syncedAt, automatic: Boolean(options.automatic) } }));
       await loadFriends();
+      return true;
     } catch (error) {
       console.error(error);
       setStatus(`업로드 실패: ${readableError(error)}`, "error");
+      window.dispatchEvent(new CustomEvent("figurearchive:sync-error", { detail: { message: readableError(error) } }));
+      return false;
     } finally {
-      button.disabled = false;
+      syncing = false;
+      if (button) button.disabled = false;
     }
   }
 
@@ -466,6 +480,8 @@ const OnlineArchive = (() => {
       renderAll();
     }
     setStatus(`${count}개 기록을 추가했습니다.`, "success");
+    window.dispatchEvent(new CustomEvent("figurearchive:cloud-downloaded", { detail: { count } }));
+    return count;
   }
 
   async function sendFriendRequest() {
@@ -512,6 +528,7 @@ const OnlineArchive = (() => {
 
     $id("friendCountBadge").textContent = accepted.length;
     $id("friendRequestCountBadge").textContent = incoming.length + outgoing.length;
+    window.dispatchEvent(new CustomEvent("figurearchive:friends", { detail: { friends: accepted.length, incoming: incoming.length, outgoing: outgoing.length } }));
     $id("friendRequests").innerHTML = incoming.length
       ? incoming.map(friendRowRequest).join("")
       : '<p class="empty-inline">받은 요청이 없습니다.</p>';
@@ -561,14 +578,18 @@ const OnlineArchive = (() => {
     </div>`;
 
   const friendRowAccepted = friend => `
-    <div class="friend-row accepted-row">
-      <div class="friend-avatar">${friendAvatar(friend.nickname)}</div>
-      <div class="friend-main">
-        <strong>${escapeHtml(friend.nickname)}</strong>
-        <div class="friend-stat-line"><span>${Number(friend.figure_count || 0)}개</span><span>${Number(friend.species_count || 0)}종</span></div>
+    <article class="friend-profile-card" data-friend-id="${friend.friend_id}">
+      <div class="friend-profile-head">
+        <div class="friend-avatar">${friendAvatar(friend.nickname)}</div>
+        <div class="friend-main"><strong>${escapeHtml(friend.nickname)}</strong><div class="friend-stat-line"><span>${Number(friend.figure_count || 0)}개 피규어</span><span>${Number(friend.species_count || 0)}종</span></div></div>
+        <button type="button" class="friend-more-button" aria-label="친구 메뉴">•••</button>
       </div>
-      <button data-compare-friend="${friend.friend_id}" data-name="${escapeHtml(friend.nickname)}" class="mini-button compare-button">도감 비교</button>
-    </div>`;
+      <div class="friend-profile-actions">
+        <button type="button" data-view-friend="${friend.friend_id}" data-name="${escapeHtml(friend.nickname)}" class="mini-button">도감 보기</button>
+        <button type="button" data-compare-friend="${friend.friend_id}" data-name="${escapeHtml(friend.nickname)}" class="mini-button compare-button">비교하기</button>
+        <button type="button" data-remove-friend="${friend.friendship_id}" data-name="${escapeHtml(friend.nickname)}" class="mini-button danger subtle-danger">삭제</button>
+      </div>
+    </article>`;
 
   async function respondFriend(id, status) {
     const { error } = await client.from("friendships").update({
@@ -598,6 +619,7 @@ const OnlineArchive = (() => {
     if (error) return setStatus(readableError(error), "error");
 
     compareData = data || [];
+    window.dispatchEvent(new CustomEvent("figurearchive:compare-loaded", { detail: { friendId, name, rows: compareData } }));
     $id("compareFriendName").textContent = `${name}님과 비교`;
     const mine = compareData.filter(row => row.mine && !row.theirs).length;
     const theirs = compareData.filter(row => !row.mine && row.theirs).length;
@@ -658,7 +680,21 @@ const OnlineArchive = (() => {
     })[character]);
   }
 
-  return { init, uploadCollection };
+  return {
+    init,
+    open: () => $id("onlineDialog")?.showModal(),
+    uploadCollection,
+    downloadCollection,
+    loadFriends,
+    openCompare,
+    renderCompareList,
+    setStatus,
+    getClient: () => client,
+    getUser: () => user,
+    getProfile: () => profile,
+    getCompareData: () => compareData,
+    configured
+  };
 })();
 
 window.addEventListener("DOMContentLoaded", () => OnlineArchive.init());

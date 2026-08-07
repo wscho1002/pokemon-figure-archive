@@ -1053,6 +1053,7 @@ async function saveFigure() {
     renderFigureList();
     renderGrid();
     requestPersistentStorage(true);
+    window.dispatchEvent(new CustomEvent("figurearchive:changed", { detail: { type: existing ? "update" : "create", figureId: figure.id } }));
     if (!existing && !wasSpeciesOwned) {
       showAchievement(figure, previousOwnedCount);
     } else {
@@ -1118,6 +1119,7 @@ async function removeFigure(figure) {
   renderFigureList();
   renderGrid();
   refs.detailSubtext.textContent = remaining.length ? `등록한 피규어 ${remaining.length}개` : "아직 등록한 피규어가 없습니다.";
+  window.dispatchEvent(new CustomEvent("figurearchive:changed", { detail: { type: "delete", figureId: figure.id } }));
   toast("기록을 삭제했습니다.");
 }
 
@@ -1225,6 +1227,7 @@ async function importBackup(event) {
     state.seriesGoals = await FigureDB.getAllSeriesGoals();
     indexFigures();
     renderAll();
+    window.dispatchEvent(new CustomEvent("figurearchive:changed", { detail: { type: "import", count: parsed.figures.length } }));
     refs.settingsDialog.close();
     toast(`${parsed.figures.length}개 기록과 시리즈 목표를 불러왔습니다.`);
   } catch (error) {
@@ -2101,3 +2104,17 @@ function resetRecordDialog() {
   refs.recordFormPicker?.replaceChildren();
   revokeObjectUrls("record");
 }
+
+
+window.FigureArchiveApp = Object.freeze({
+  getState: () => state,
+  getRefs: () => refs,
+  openDetail,
+  openRecordDialog,
+  renderAll,
+  renderDashboard,
+  renderGrid,
+  populateCollectionControls,
+  indexFigures,
+  toast
+});
