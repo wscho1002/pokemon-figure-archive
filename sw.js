@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pokemon-figure-archive-2026-v5-online";
+const CACHE_NAME = "pokemon-figure-archive-2026-v5-1-ui";
 const APP_SHELL = [
   "./",
   "./index.html",

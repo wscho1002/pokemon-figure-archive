@@ -44,6 +44,7 @@ async function init() {
   installMobileZoomGuards();
   bindRefs();
   bindEvents();
+  setupCollapsibleSections();
   registerServiceWorker();
   await FigureDB.open();
   await loadAppData();
@@ -52,6 +53,43 @@ async function init() {
 }
 
 
+
+
+const DASHBOARD_COLLAPSE_KEY = "pokemon-figure-dashboard-collapse-v1";
+
+function setupCollapsibleSections() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(DASHBOARD_COLLAPSE_KEY) || "{}");
+  } catch (_) {
+    saved = {};
+  }
+
+  document.querySelectorAll("[data-collapse-target]").forEach(button => {
+    const target = document.getElementById(button.dataset.collapseTarget);
+    if (!target) return;
+    const key = button.dataset.collapseKey || button.dataset.collapseTarget;
+
+    const apply = collapsed => {
+      target.hidden = collapsed;
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.classList.toggle("collapsed", collapsed);
+      const label = button.querySelector(".collapse-label");
+      const icon = button.querySelector(".collapse-icon");
+      if (label) label.textContent = collapsed ? "펼치기" : "접기";
+      if (icon) icon.textContent = collapsed ? "⌄" : "⌃";
+      button.closest(".collapsible-section")?.classList.toggle("is-collapsed", collapsed);
+    };
+
+    apply(Boolean(saved[key]));
+    button.addEventListener("click", () => {
+      const collapsed = !target.hidden;
+      apply(collapsed);
+      saved[key] = collapsed;
+      try { localStorage.setItem(DASHBOARD_COLLAPSE_KEY, JSON.stringify(saved)); } catch (_) {}
+    });
+  });
+}
 
 function installMobileZoomGuards() {
   // iOS Safari의 페이지 핀치 확대를 막되 사진 편집기의 자체 핀치 동작은 유지합니다.

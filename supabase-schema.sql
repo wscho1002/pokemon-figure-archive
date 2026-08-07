@@ -1,4 +1,4 @@
--- Pokémon Figure Archive v5 Online Beta
+-- Pokémon Figure Archive v5.1 Online Beta
 -- Supabase Dashboard > SQL Editor에서 전체 실행하세요.
 
 create extension if not exists pgcrypto;
@@ -49,6 +49,12 @@ create index if not exists public_figures_species_idx on public.public_figures(u
 alter table public.profiles enable row level security;
 alter table public.friendships enable row level security;
 alter table public.public_figures enable row level security;
+
+-- 프로젝트 생성 시 "Automatically expose new tables"를 꺼도 브라우저 앱이 접근할 수 있게 권한을 명시합니다.
+grant usage on schema public to authenticated;
+grant select, insert, update on table public.profiles to authenticated;
+grant select, insert, update, delete on table public.friendships to authenticated;
+grant select, insert, update, delete on table public.public_figures to authenticated;
 
 -- 로그인 사용자는 친구 코드 검색과 친구 목록 표시에 필요한 공개 프로필만 읽을 수 있습니다.
 drop policy if exists "authenticated profiles read" on public.profiles;

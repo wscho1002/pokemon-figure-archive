@@ -46,38 +46,57 @@
       <div><strong id="recentCount">0</strong><span>이번 달 획득</span></div>
     </section>
 
-    <section class="dashboard-section" aria-labelledby="generationTitle">
+    <section class="dashboard-section collapsible-section" aria-labelledby="generationTitle">
       <div class="section-heading">
         <div>
           <p class="eyebrow">GENERATION</p>
           <h2 id="generationTitle">세대별 완성률</h2>
         </div>
-        <button id="resetGenerationButton" type="button" class="inline-action">전체 보기</button>
+        <div class="section-actions">
+          <button id="resetGenerationButton" type="button" class="inline-action">전체 보기</button>
+          <button type="button" class="collapse-button" data-collapse-target="generationBody" data-collapse-key="generation" aria-expanded="true" aria-controls="generationBody">
+            <span class="collapse-label">접기</span><span class="collapse-icon" aria-hidden="true">⌃</span>
+          </button>
+        </div>
       </div>
-      <div id="generationProgress" class="generation-progress"></div>
+      <div id="generationBody" class="collapsible-content">
+        <div id="generationProgress" class="generation-progress"></div>
+      </div>
     </section>
 
-    <section id="recentSection" class="dashboard-section" aria-labelledby="recentTitle" hidden>
+    <section id="recentSection" class="dashboard-section collapsible-section" aria-labelledby="recentTitle" hidden>
       <div class="section-heading">
         <div>
           <p class="eyebrow">RECENTLY ADDED</p>
           <h2 id="recentTitle">최근 획득</h2>
         </div>
+        <button type="button" class="collapse-button" data-collapse-target="recentBody" data-collapse-key="recent" aria-expanded="true" aria-controls="recentBody">
+          <span class="collapse-label">접기</span><span class="collapse-icon" aria-hidden="true">⌃</span>
+        </button>
       </div>
-      <div id="recentFigures" class="recent-figures"></div>
+      <div id="recentBody" class="collapsible-content">
+        <div id="recentFigures" class="recent-figures"></div>
+      </div>
     </section>
 
-    <section id="collectionSection" class="dashboard-section collection-section" aria-labelledby="collectionTitle">
+    <section id="collectionSection" class="dashboard-section collection-section collapsible-section" aria-labelledby="collectionTitle">
       <div class="section-heading">
         <div>
           <p class="eyebrow">MAKER &amp; SERIES</p>
           <h2 id="collectionTitle">제조사·시리즈 도감</h2>
         </div>
-        <button id="manageSeriesButton" type="button" class="inline-action">목표 관리</button>
+        <div class="section-actions">
+          <button id="manageSeriesButton" type="button" class="inline-action">목표 관리</button>
+          <button type="button" class="collapse-button" data-collapse-target="collectionBody" data-collapse-key="collection" aria-expanded="true" aria-controls="collectionBody">
+            <span class="collapse-label">접기</span><span class="collapse-icon" aria-hidden="true">⌃</span>
+          </button>
+        </div>
       </div>
-      <div id="makerOverview" class="maker-overview"></div>
-      <div id="seriesOverview" class="series-overview"></div>
-      <p id="collectionEmpty" class="collection-empty">피규어에 제조사와 시리즈를 입력하면 여기에 자동으로 정리됩니다.</p>
+      <div id="collectionBody" class="collapsible-content">
+        <div id="makerOverview" class="maker-overview"></div>
+        <div id="seriesOverview" class="series-overview"></div>
+        <p id="collectionEmpty" class="collection-empty">피규어에 제조사와 시리즈를 입력하면 여기에 자동으로 정리됩니다.</p>
+      </div>
     </section>
 
     <section class="toolbar sticky-toolbar">
